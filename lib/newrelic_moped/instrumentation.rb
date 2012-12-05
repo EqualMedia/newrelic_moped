@@ -27,7 +27,7 @@ module NewRelic
         operation_name, collection = determine_operation_and_collection(operations.first)
         log_statement = operations.first.log_inspect
 
-        self.class.trace_execution_scoped("Database/#{collection}/#{operation_name}") do
+        self.class.trace_execution_scoped(["Database/", collection, '/', operation_name].join) do
           t0 = Time.now
           res = logging_without_newrelic_trace(operations, &blk)
           elapsed_time = (Time.now - t0).to_f
