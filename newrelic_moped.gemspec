@@ -16,6 +16,7 @@ Gem::Specification.new do |gem|
   gem.version       = NewrelicMoped::VERSION
   gem.add_dependency 'newrelic_rpm', '~> 3.5.1'
   gem.add_dependency 'moped'
+  gem.add_dependency 'multi_json', '~> 1.0'
 
   gem.add_development_dependency 'rake'
 end

@@ -18,40 +18,69 @@ DependencyDetection.defer do
       alias_method :logging, :logging_with_newrelic_trace
     end
   end
+
+  executes do
+     NewRelic::Agent.set_sql_obfuscator(:replace) do |sql|
+       NewRelic::Moped::Instrumentation.obsfucate(MultiJson.load(sql))
+     end
+  end
 end
 
 module NewRelic
   module Moped
     module Instrumentation
       def logging_with_newrelic_trace(operations, &blk)
-        operation_name, collection = determine_operation_and_collection(operations.first)
-        log_statement = operations.first.log_inspect
+        operation_name, collection, sql = get_tracing_data(operations.first)
 
         self.class.trace_execution_scoped(["Database/", collection, '/', operation_name].join) do
           t0 = Time.now
           res = logging_without_newrelic_trace(operations, &blk)
           elapsed_time = (Time.now - t0).to_f
-          NewRelic::Agent.instance.transaction_sampler.notice_sql(log_statement, nil, elapsed_time)
-          NewRelic::Agent.instance.sql_sampler.notice_sql(log_statement, nil, nil, elapsed_time)
+          if sql
+            NewRelic::Agent.instance.transaction_sampler.notice_sql(sql, nil, elapsed_time)
+            NewRelic::Agent.instance.sql_sampler.notice_sql(sql, nil, nil, elapsed_time)
+          end
           res
         end
       end
 
-      def determine_operation_and_collection(operation)
-        log_statement = operation.log_inspect
-        collection = "Unknown"
-        if operation.respond_to?(:collection)
-          collection = operation.collection
+      def get_tracing_data operation
+        name = operation.class.name.split('::').last
+        collection = :unknown
+        sql = nil
+
+        case operation
+        when ::Moped::Protocol::Command,
+          ::Moped::Protocol::Query,
+          ::Moped::Protocol::Update,
+          ::Moped::Protocol::Delete
+
+          collection = operation.full_collection_name
+          sql = MultiJson.dump(operation.selector)
+
+        when ::Moped::Protocol::Insert,
+          ::Moped::Protocol::GetMore
+
+          collection = operation.full_collection_name
+
+        when ::Moped::Protocol::KillCursors
         end
-        operation_name = log_statement.split[0]
-        if operation_name == 'COMMAND' && log_statement.include?(":mapreduce")
-          operation_name = 'MAPREDUCE'
-          collection = log_statement[/:mapreduce=>"([^"]+)/,1]
-        elsif operation_name == 'COMMAND' && log_statement.include?(":count")
-          operation_name = 'COUNT'
-          collection = log_statement[/:count=>"([^"]+)/,1]
+
+        [name, collection, sql]
+      end
+
+      def self.obsfucate obj
+        case obj
+        when Hash
+          obj.inject({}) do |_h, (k, v)|
+            _h[k] = obsfucate(v)
+            _h
+          end
+        when Array
+          obj.map {|e| obsfucate(e)}
+        else
+          '?'
         end
-        return operation_name, collection
       end
     end
   end
