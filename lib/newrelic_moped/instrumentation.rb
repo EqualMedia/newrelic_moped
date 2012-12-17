@@ -47,16 +47,20 @@ module NewRelic
       def get_tracing_data operation
         name = operation.class.name.split('::').last
         collection = :unknown
-        sql = nil
+        cmd = {}
 
         case operation
         when ::Moped::Protocol::Command,
           ::Moped::Protocol::Query,
-          ::Moped::Protocol::Update,
           ::Moped::Protocol::Delete
 
           collection = operation.full_collection_name
-          sql = MultiJson.dump(operation.selector)
+          cmd[:selector] = operation.selector
+
+        when ::Moped::Protocol::Update
+          collection = operation.full_collection_name
+          cmd[:selector] = operation.selector
+          cmd[:update] = operation.update
 
         when ::Moped::Protocol::Insert,
           ::Moped::Protocol::GetMore
@@ -66,7 +70,7 @@ module NewRelic
         when ::Moped::Protocol::KillCursors
         end
 
-        [name, collection, sql]
+        [name, collection, MultiJson.dump(cmd)]
       end
 
       def self.obsfucate obj
